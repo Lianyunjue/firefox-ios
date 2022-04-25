@@ -17,8 +17,8 @@ extension GleanPlumbMessageManagable {
 
 protocol GleanPlumbMessageManagerProtocol {
 
-    /// Does the bookkeeping and preparation of messages for their respective surfaces.
-    /// We can build our collection of eligible messages for the surface in here.
+    /// Performs the bookkeeping and preparation of messages for their respective surfaces.
+    /// We can build our collection of eligible messages for a surface in here.
     func onStartup()
 
     /// Finds the next message to be displayed out of all showable messages.
@@ -45,7 +45,6 @@ protocol GleanPlumbMessageManagerProtocol {
 
 /// The `GleanPlumbMessageManager` is responsible for several things including:
 /// - preparing Messages for a given UI surface
-///
 /// - reporting telemetry for `GleanPlumbMessage`s:
 ///     - impression counts
 ///     - user dismissal of a message
@@ -62,12 +61,12 @@ class GleanPlumbMessageManager: GleanPlumbMessageManagerProtocol {
 
     static let shared = GleanPlumbMessageManager()
 
-    private let messagingHelper: GleanPlumbHelper
+    private let messagingHelper: GleanPlumbMessageTools
     private let messagingStore: GleanPlumbMessageStore
 
     // MARK: - Inits
 
-    init(messagingHelper: GleanPlumbHelper = GleanPlumbHelper(),
+    init(messagingHelper: GleanPlumbMessageTools = GleanPlumbMessageTools(),
          messagingStore: GleanPlumbMessageStore = GleanPlumbMessageStore()) {
         self.messagingHelper = messagingHelper
         self.messagingStore = messagingStore
@@ -117,7 +116,7 @@ class GleanPlumbMessageManager: GleanPlumbMessageManagerProtocol {
         let feature = FxNimbus.shared.features.messaging.value()
         guard let helper = messagingHelper.createGleanPlumbHelper() else { return nil }
 
-        /// All these are non-expired, well formed messages for a requested surface.
+        /// All these are non-expired, well formed, and descending priority messages for a requested surface.
         let messages = feature.messages.compactMap { key, messageData -> GleanPlumbMessage? in
             if let message = self.createMessage(messageId: key,
                                                 message: messageData,
@@ -138,37 +137,15 @@ class GleanPlumbMessageManager: GleanPlumbMessageManagerProtocol {
         }
 
         /// Take the first triggered message.
-        guard let message = messages.first(where: { message in
-            do {
-                return try messagingHelper.isMessageEligible(message, messageHelper: helper)
-            } catch {
-                return false
-            }
-        }) else {
-            return nil
-        }
+        guard let message = getNextTriggeredMessage(messages, helper) else { return nil }
 
         /// If it's a message under experiment, we need to react to whether it's a control or not.
-        if messagingHelper.isMessageUnderExperiment(experimentKey: feature.messageUnderExperiment, message: message) {
-            FxNimbus.shared.features.messaging.recordExposure()
-            let onControlActions = feature.onControl
-
-            if message.data.isControl {
-                switch onControlActions {
-                case .showNone:
-                    return nil
-                case .showNextMessage:
-                    return messages.first { message in
-                        do {
-                            return try messagingHelper.isMessageEligible(message, messageHelper: helper)
-                            && !message.data.isControl
-                        } catch {
-                            onMalformedMessage(messageKey: message.id)
-                            return false
-                        }
-                    }
-                }
-            }
+        if isMessageUnderExperiment(experimentKey: feature.messageUnderExperiment, message) {
+            guard let nextTriggeredMessage = handleMessageUnderExperiment(message,
+                                                                          messages,
+                                                                          helper,
+                                                                          feature.onControl) else { return nil }
+            return nextTriggeredMessage
         }
 
         return message
@@ -237,6 +214,75 @@ class GleanPlumbMessageManager: GleanPlumbMessageManagerProtocol {
                                      object: .homeTabBanner,
                                      value: .messageMalformed,
                                      extras: [TelemetryWrapper.EventExtraKey.messageKey.rawValue: messageKey])
+    }
+
+    // MARK: - Misc. Private helpers
+
+    /// From the list of messages that are well-formed and non-expired, we return the next / first triggered message.
+    ///
+    /// - Returns: The next triggered message, if one exists.
+    private func getNextTriggeredMessage(_ messages: [GleanPlumbMessage], _ helper: GleanPlumbMessageHelper) -> GleanPlumbMessage? {
+        messages.first( where: { message in
+            do {
+                return try messagingHelper.isMessageEligible(message, messageHelper: helper)
+            } catch {
+                return false
+            }
+        })
+    }
+
+    /// If a message is under experiment, we need to handle it a certain way.
+    ///
+    /// First, messages under experiment should always report exposure.
+    ///
+    /// Second, for messages under experiment, there's a chance we may encounter a "control message." If a message
+    /// under experiment IS a control message, we're told how the surface should handle it.
+    ///
+    /// How we handle a control message is provided by `nimbus.fml.yaml`.
+    ///
+    /// The only two options are:
+    /// - showNextMessage
+    /// - showNone
+    ///
+    /// - Returns: The next triggered message, if one exists.
+    private func handleMessageUnderExperiment(_ message: GleanPlumbMessage,
+                                              _ messages: [GleanPlumbMessage],
+                                              _ helper: GleanPlumbMessageHelper,
+                                              _ onControl: ControlMessageBehavior) -> GleanPlumbMessage? {
+        FxNimbus.shared.features.messaging.recordExposure()
+        let onControlActions = onControl
+
+        if message.data.isControl {
+            switch onControlActions {
+            case .showNone:
+                return nil
+            case .showNextMessage:
+                return messages.first { message in
+                    do {
+                        return try messagingHelper.isMessageEligible(message, messageHelper: helper)
+                        && !message.data.isControl
+                    } catch {
+                        onMalformedMessage(messageKey: message.id)
+                        return false
+                    }
+                }
+            }
+        }
+
+        return nil
+    }
+
+    /// If the message is under experiment, the call site needs to handle it in a special way.
+    private func isMessageUnderExperiment(experimentKey: String?, _ message: GleanPlumbMessage) -> Bool {
+        guard let experimentKey = experimentKey else { return false }
+
+        if message.data.isControl { return true }
+
+        if message.id.hasSuffix("-") {
+            return message.id.hasPrefix(experimentKey)
+        }
+
+        return message.id == experimentKey
     }
 
 }

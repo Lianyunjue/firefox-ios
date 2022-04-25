@@ -33,9 +33,9 @@ class GleanPlumbMessageStore: GleanPlumbMessagingStoreProtocol {
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
 
-    private let messagingHelper: GleanPlumbHelper
+    private let messagingHelper: GleanPlumbMessageTools
 
-    init(messagingHelper: GleanPlumbHelper = GleanPlumbHelper()) {
+    init(messagingHelper: GleanPlumbMessageTools = GleanPlumbMessageTools()) {
         self.messagingHelper = messagingHelper
     }
 

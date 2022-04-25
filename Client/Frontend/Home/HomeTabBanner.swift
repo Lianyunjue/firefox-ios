@@ -62,6 +62,15 @@ class HomeTabBanner: UIView, GleanPlumbMessageManagable {
         button.addTarget(self, action: #selector(self?.dismissCard), for: .touchUpInside)
     }
 
+    private lazy var textStackView: UIStackView = .build { [weak self] stackView in
+        guard let self = self else { return }
+        stackView.addArrangedSubview(self.bannerTitle)
+        stackView.addArrangedSubview(self.descriptionText)
+        stackView.axis = .vertical
+        stackView.distribution = .fillEqually
+        stackView.spacing = -16
+    }
+
     private lazy var scrollView: UIScrollView = .build { view in
         view.backgroundColor = .clear
     }
@@ -92,7 +101,7 @@ class HomeTabBanner: UIView, GleanPlumbMessageManagable {
     }
 
     private func setupLayout() {
-        cardView.addSubviews(ctaButton, image, bannerTitle, descriptionText, dismissButton)
+        cardView.addSubviews(ctaButton, image, textStackView, dismissButton)
         containerView.addSubview(cardView)
         scrollView.addSubview(containerView)
         addSubview(scrollView)
@@ -102,11 +111,6 @@ class HomeTabBanner: UIView, GleanPlumbMessageManagable {
 
         NSLayoutConstraint.activate([
             // Constraints that set the size and position of the scroll view relative to its superview
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
             scrollView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             scrollView.topAnchor.constraint(equalTo: containerView.topAnchor),
             scrollView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
@@ -138,22 +142,18 @@ class HomeTabBanner: UIView, GleanPlumbMessageManagable {
             image.widthAnchor.constraint(equalToConstant: UX.logoSize.width),
             image.heightAnchor.constraint(equalToConstant: UX.logoSize.height),
 
-            bannerTitle.topAnchor.constraint(equalTo: image.topAnchor, constant: -16),
-            bannerTitle.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 16),
-            bannerTitle.trailingAnchor.constraint(equalTo: cardView.trailingAnchor),
+            textStackView.topAnchor.constraint(equalTo: dismissButton.bottomAnchor),
+            textStackView.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 16),
+            textStackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
+            textStackView.bottomAnchor.constraint(equalTo: ctaButton.topAnchor, constant: -8),
 
-            descriptionText.topAnchor.constraint(equalTo: bannerTitle.bottomAnchor),
-            descriptionText.leadingAnchor.constraint(equalTo: bannerTitle.leadingAnchor),
-            descriptionText.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -12),
-            descriptionText.bottomAnchor.constraint(greaterThanOrEqualTo: ctaButton.topAnchor, constant: -16),
-
-            dismissButton.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 16),
-            dismissButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
+            dismissButton.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 8),
+            dismissButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -8),
             dismissButton.heightAnchor.constraint(equalToConstant: 16),
             dismissButton.widthAnchor.constraint(equalToConstant: 16),
 
             ctaButton.centerXAnchor.constraint(equalTo: cardView.centerXAnchor),
-            ctaButton.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -16),
+            ctaButton.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -8),
             ctaButton.widthAnchor.constraint(equalToConstant: UX.learnHowButtonSize.width),
             ctaButton.heightAnchor.constraint(equalToConstant: UX.learnHowButtonSize.height)
         ])
@@ -161,7 +161,6 @@ class HomeTabBanner: UIView, GleanPlumbMessageManagable {
 
     /// Apply message data, including handling of cases where certain parts of the message are missing.
     private func applyMessage() {
-
         /// If no messages exist, continue using our evergreen message.
         guard let message = message else {
             /// Make sure the user hasn't already dismissed the evergreen.
@@ -189,7 +188,7 @@ class HomeTabBanner: UIView, GleanPlumbMessageManagable {
         if let title = message.data.title {
             bannerTitle.text = title
         } else {
-            bannerTitle.removeFromSuperview()
+            textStackView.removeArrangedView(bannerTitle)
         }
 
         descriptionText.text = message.data.text
